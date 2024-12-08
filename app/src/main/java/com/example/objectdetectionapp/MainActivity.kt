@@ -13,15 +13,18 @@ import android.os.HandlerThread
 import android.view.Surface
 import android.view.TextureView
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
 import com.example.objectdetectionapp.ml.SsdMobilenetV11Metadata1
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 
-class MainActivity : AppCompatActivity() { 
+class MainActivity : AppCompatActivity() {
 
     lateinit var labels: List<String>
     val colors = listOf(
@@ -37,10 +40,26 @@ class MainActivity : AppCompatActivity() {
     lateinit var model: SsdMobilenetV11Metadata1
     lateinit var imageProcessor: ImageProcessor
     lateinit var imageView: ImageView
+    lateinit var statusTextView: TextView
+    lateinit var captureButton: FloatingActionButton
+    lateinit var toolbar: Toolbar
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Initialize UI elements
+        toolbar = findViewById(R.id.toolbar)
+        setSupportActionBar(toolbar) // Use the custom Toolbar as the ActionBar
+
+        statusTextView = findViewById(R.id.statusTextView)
+        imageView = findViewById(R.id.imageView)
+        textureView = findViewById(R.id.textureview)
+        captureButton = findViewById(R.id.captureButton)
+
+        captureButton.setOnClickListener {
+            captureAndProcessImage()
+        }
 
         get_permission()
 
@@ -53,9 +72,9 @@ class MainActivity : AppCompatActivity() {
         val handlerThread = HandlerThread("videothread")
         handlerThread.start()
         handler = Handler(handlerThread.looper)
-        imageView = findViewById(R.id.imageView)
 
-        textureView = findViewById(R.id.textureview)
+        statusTextView.text = "Initializing Camera..."
+
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(
                 surface: android.graphics.SurfaceTexture,
@@ -74,14 +93,19 @@ class MainActivity : AppCompatActivity() {
             override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean = false
 
             override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {
-                textureView.bitmap?.let { bmp ->
-                    bitmap = bmp
-                    processFrame()
-                }
+                // No continuous detection, only capture on button press
             }
         }
 
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    }
+
+    private fun captureAndProcessImage() {
+        statusTextView.text = "Capturing Image..."
+        textureView.bitmap?.let { bmp ->
+            bitmap = bmp
+            processFrame()
+        }
     }
 
     private fun processFrame() {
@@ -123,10 +147,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         imageView.setImageBitmap(mutable)
+        statusTextView.text = "Detection Complete"
     }
 
     @SuppressLint("MissingPermission")
     private fun open_camera() {
+        statusTextView.text = "Opening Camera..."
         cameraManager.openCamera(cameraManager.cameraIdList[0], object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
                 cameraDevice = camera
@@ -139,17 +165,24 @@ class MainActivity : AppCompatActivity() {
                     listOf(surface),
                     object : CameraCaptureSession.StateCallback() {
                         override fun onConfigured(session: CameraCaptureSession) {
-                            session.setRepeatingRequest(cap.build(), null, null)
+                            session.setRepeatingRequest(cap.build(), null, handler)
+                            statusTextView.text = "Camera Ready"
                         }
 
-                        override fun onConfigureFailed(session: CameraCaptureSession) {}
+                        override fun onConfigureFailed(session: CameraCaptureSession) {
+                            statusTextView.text = "Camera Configuration Failed"
+                        }
                     }, handler
                 )
             }
 
-            override fun onDisconnected(camera: CameraDevice) {}
+            override fun onDisconnected(camera: CameraDevice) {
+                statusTextView.text = "Camera Disconnected"
+            }
 
-            override fun onError(camera: CameraDevice, error: Int) {}
+            override fun onError(camera: CameraDevice, error: Int) {
+                statusTextView.text = "Camera Error: $error"
+            }
         }, handler)
     }
 
